@@ -1,0 +1,110 @@
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  width: 400px;
+  min-height: 540px;
+  margin: 0;
+  background: linear-gradient(135deg, #e0e7ff 0%, #f0f4ff 100%);
+  color: #222;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.glass-container {
+  width: 98%;
+  margin: 24px auto;
+  padding: 28px 24px 18px 24px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+}
+.tab-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  color: #6366f1;
+  padding: 8px 18px;
+  border-radius: 8px 8px 0 0;
+  margin-left: 8px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.tab-btn.active, .tab-btn:hover {
+  background: #e0e7ff;
+  color: #2a3a5e;
+}
+.tab-panel {
+  animation: fadeIn 0.3s;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+h2 {
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #2a3a5e;
+  margin-bottom: 18px;
+  text-shadow: 0 2px 8px #e0e7ff;
+}
+.form-group {
+  margin-bottom: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 500;
+  color: #2a3a5e;
+}
+input, select {
+  padding: 8px 14px;
+  border: 1.5px solid #cfd8dc;
+  border-radius: 7px;
+  font-size: 15px;
+  margin-right: 14px;
+  margin-bottom: 4px;
+  background: rgba(255,255,255,0.7);
+  transition: border 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 4px #e3e3e3;
+}
+input:focus, select:focus {
+  border: 1.5px solid #6366f1;
+  outline: none;
+  box-shadow: 0 0 0 2px #c7d2fe;
+}
+.primary-btn {
+  padding: 9px 26px;
+  background: linear-gradient(90deg, #6366f1 0%, #60a5fa 100%);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 16px;
+  cursor: pointer;
+  font-weight: 600;
+  box-shadow: 0 2px 8px #c7d2fe;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.primary-btn:hover {
+  background: linear-gradient(90deg, #4f46e5 0%, #2563eb 100%);
+  box-shadow: 0 4px 16px #a5b4fc;
+}
+#loading {
+  color: #6366f1;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+#saveStatus, #exportStatus {
+  text-shadow: 0 1px 4px #fff;
+} 

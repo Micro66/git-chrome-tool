@@ -1,0 +1,1 @@
+// utils/gitlabApi.js 保持不变，相关逻辑已迁移到 contentScript.js 供 content script 使用。 
