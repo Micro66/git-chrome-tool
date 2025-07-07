@@ -17,6 +17,24 @@ async function getEncodingPreference() {
   });
 }
 
+// 检查GitLab配置是否完整
+async function checkGitLabConfig() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['defaultToken', 'defaultBaseUrl'], (data) => {
+      resolve({
+        isConfigured: !!(data.defaultToken && data.defaultBaseUrl),
+        token: data.defaultToken || '',
+        baseUrl: data.defaultBaseUrl || ''
+      });
+    });
+  });
+}
+
+// 打开配置页面
+function openOptionsPage() {
+  chrome.runtime.openOptionsPage();
+}
+
 // 添加UTF-8 BOM标记
 function addUtf8Bom(content) {
   const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
@@ -37,6 +55,14 @@ function createExcelCompatibleCsv(content, encoding) {
 }
 
 export async function exportToCSV(data, filename = 'events.csv') {
+  // 检查GitLab配置
+  const config = await checkGitLabConfig();
+  if (!config.isConfigured) {
+    alert('请先配置GitLab URL和Token');
+    openOptionsPage();
+    return;
+  }
+
   const csvRows = [];
   if (data.length === 0) return;
   const headers = Object.keys(data[0]);
@@ -59,6 +85,15 @@ export async function exportToCSV(data, filename = 'events.csv') {
 }
 
 export async function exportToCSVWithProgress(data, setStatus, filename = 'events.csv') {
+  // 检查GitLab配置
+  const config = await checkGitLabConfig();
+  if (!config.isConfigured) {
+    setStatus && setStatus('');
+    alert('请先配置GitLab URL和Token');
+    openOptionsPage();
+    return;
+  }
+
   if (data.length === 0) return;
   const headers = Object.keys(data[0]);
   const csvRows = [headers.join(',')];
@@ -85,7 +120,15 @@ export async function exportToCSVWithProgress(data, setStatus, filename = 'event
   link.click();
 }
 
-export function exportToMarkdown(data, filename = 'events.md') {
+export async function exportToMarkdown(data, filename = 'events.md') {
+  // 检查GitLab配置
+  const config = await checkGitLabConfig();
+  if (!config.isConfigured) {
+    alert('请先配置GitLab URL和Token');
+    openOptionsPage();
+    return;
+  }
+
   if (data.length === 0) return;
   const headers = Object.keys(data[0]);
   let md = '| ' + headers.join(' | ') + ' |\n';
@@ -101,6 +144,15 @@ export function exportToMarkdown(data, filename = 'events.md') {
 }
 
 export async function exportToMarkdownWithProgress(data, setStatus, filename = 'events.md') {
+  // 检查GitLab配置
+  const config = await checkGitLabConfig();
+  if (!config.isConfigured) {
+    setStatus && setStatus('');
+    alert('请先配置GitLab URL和Token');
+    openOptionsPage();
+    return;
+  }
+
   if (data.length === 0) return;
   const headers = Object.keys(data[0]);
   let md = '| ' + headers.join(' | ') + ' |\n';
@@ -119,4 +171,4 @@ export async function exportToMarkdownWithProgress(data, setStatus, filename = '
   link.href = URL.createObjectURL(blob);
   link.download = filename;
   link.click();
-} 
+}
