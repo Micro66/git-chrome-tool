@@ -29,7 +29,8 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*/users/*/activity"
+        "*://*/users/*/activity",
+        "*://*/*/merge_requests/*"
       ],
       "js": ["contentScript.js"],
       "run_at": "document_end"

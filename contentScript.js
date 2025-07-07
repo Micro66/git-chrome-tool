@@ -26,8 +26,18 @@
   // 立即注入样式，保证按钮和弹窗都美观
   injectStyle();
 
-  if (window.__gitlab_export_btn_injected) return;
-  window.__gitlab_export_btn_injected = true;
+  if (window.__gitlab_export_btn_injected && window.__gitlab_copy_diff_btn_injected) return;
+  
+  // 检查是否是merge request页面
+  const isMergeRequestPage = window.location.href.includes('/merge_requests/');
+  
+  if (!window.__gitlab_export_btn_injected) {
+    window.__gitlab_export_btn_injected = true;
+  }
+  
+  if (isMergeRequestPage && !window.__gitlab_copy_diff_btn_injected) {
+    window.__gitlab_copy_diff_btn_injected = true;
+  }
 
   // 插入导出按钮
   function insertExportBtn() {
@@ -414,7 +424,197 @@
     return '';
   }
 
-  const observer = new MutationObserver(insertExportBtn);
+  // 插入复制git diff按钮
+  function insertCopyDiffBtn() {
+    // 检查是否是merge request页面
+    if (!window.location.href.includes('/merge_requests/')) return;
+    
+    // 如果按钮已存在，则不重复添加
+    if (document.getElementById('gitlab-copy-diff-btn')) return;
+    
+    // 查找Edit按钮
+    const editBtn = document.querySelector('.detail-page-header-actions a.js-issuable-edit');
+    if (!editBtn) return;
+    
+    // 创建复制git diff按钮
+    const btn = document.createElement('button');
+    btn.id = 'gitlab-copy-diff-btn';
+    btn.textContent = '复制git diff';
+    btn.className = 'gl-button btn btn-md btn-default gl-display-none gl-md-display-block';
+    btn.style.marginRight = '8px';
+    btn.onclick = copyGitDiff;
+    
+    // 创建按钮内部的span元素，与Edit按钮结构保持一致
+    const spanText = document.createElement('span');
+    spanText.className = 'gl-button-text';
+    spanText.textContent = '复制git diff';
+    btn.textContent = ''; // 清空按钮文本
+    btn.appendChild(spanText);
+    
+    // 插入按钮到Edit按钮前面
+    editBtn.parentNode.insertBefore(btn, editBtn);
+    
+    // 同时在移动端下拉菜单中添加复制git diff选项
+    try {
+      const mobileEditItem = document.querySelector('[data-testid="edit-merge-request"]');
+      if (mobileEditItem) {
+        const mobileMenu = mobileEditItem.parentNode;
+        
+        const copyDiffItem = document.createElement('li');
+        copyDiffItem.className = 'gl-new-dropdown-item';
+        copyDiffItem.tabIndex = 0;
+        copyDiffItem.dataset.testid = 'copy-git-diff';
+        
+        const copyDiffButton = document.createElement('button');
+        copyDiffButton.tabIndex = -1;
+        copyDiffButton.type = 'button';
+        copyDiffButton.className = 'gl-new-dropdown-item-content';
+        copyDiffButton.onclick = copyGitDiff;
+        
+        const textWrapper = document.createElement('span');
+        textWrapper.className = 'gl-new-dropdown-item-text-wrapper';
+        textWrapper.textContent = '复制git diff';
+        
+        copyDiffButton.appendChild(textWrapper);
+        copyDiffItem.appendChild(copyDiffButton);
+        
+        // 插入到Edit选项前面
+        mobileMenu.insertBefore(copyDiffItem, mobileEditItem);
+      }
+    } catch (e) {
+      console.error('添加移动端复制git diff选项失败:', e);
+    }
+  }
+  
+  // 复制git diff功能
+  function copyGitDiff(event) {
+    // 阻止事件冒泡，防止触发其他事件
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    // 获取当前页面URL
+    const currentUrl = window.location.href;
+    
+    // 构建.diff URL
+    const diffUrl = currentUrl.replace(/\/merge_requests\/(\d+).*$/, '/merge_requests/$1.diff');
+    
+    // 判断是桌面按钮还是移动端菜单项
+    const isMobileMenu = event && event.currentTarget && event.currentTarget.classList.contains('gl-new-dropdown-item-content');
+    
+    // 获取按钮元素和文本元素
+    let btn, textElement, originalText;
+    
+    if (isMobileMenu) {
+      btn = event.currentTarget;
+      textElement = btn.querySelector('.gl-new-dropdown-item-text-wrapper');
+      originalText = textElement.textContent;
+      textElement.textContent = '加载中...';
+    } else {
+      btn = document.getElementById('gitlab-copy-diff-btn');
+      textElement = btn.querySelector('.gl-button-text');
+      originalText = textElement.textContent;
+      textElement.textContent = '加载中...';
+      btn.disabled = true;
+    }
+    
+    // 获取diff内容
+    fetch(diffUrl)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('获取diff失败');
+        }
+        return response.text();
+      })
+      .then(diffText => {
+        // 复制到剪贴板
+        navigator.clipboard.writeText(diffText)
+          .then(() => {
+            // 显示成功状态
+            textElement.textContent = '复制成功!';
+            
+            // 创建并显示一个临时的成功提示
+            showToast('Git diff已复制到剪贴板');
+            
+            setTimeout(() => {
+              textElement.textContent = originalText;
+              if (!isMobileMenu) {
+                btn.disabled = false;
+              }
+            }, 2000);
+          })
+          .catch(err => {
+            console.error('复制失败:', err);
+            textElement.textContent = '复制失败';
+            setTimeout(() => {
+              textElement.textContent = originalText;
+              if (!isMobileMenu) {
+                btn.disabled = false;
+              }
+            }, 2000);
+          });
+      })
+      .catch(error => {
+        console.error('获取diff失败:', error);
+        textElement.textContent = '获取失败';
+        setTimeout(() => {
+          textElement.textContent = originalText;
+          if (!isMobileMenu) {
+            btn.disabled = false;
+          }
+        }, 2000);
+      });
+  }
+  
+  // 显示一个临时的toast提示
+  function showToast(message) {
+    // 检查是否已存在toast
+    let toast = document.querySelector('.gitlab-toast');
+    if (toast) {
+      toast.remove();
+    }
+    
+    // 创建toast元素
+    toast = document.createElement('div');
+    toast.className = 'gitlab-toast';
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #1f75cb;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 4px;
+      z-index: 9999;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      font-size: 14px;
+      font-weight: 500;
+    `;
+    
+    // 添加到页面
+    document.body.appendChild(toast);
+    
+    // 2秒后自动消失
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.5s';
+      setTimeout(() => toast.remove(), 500);
+    }, 2000);
+  }
+
+  // 根据页面类型执行不同的操作
+  function handlePageChange() {
+    if (window.location.href.includes('/users/') && window.location.href.includes('/activity')) {
+      insertExportBtn();
+    } else if (window.location.href.includes('/merge_requests/')) {
+      insertCopyDiffBtn();
+    }
+  }
+
+  const observer = new MutationObserver(handlePageChange);
   observer.observe(document.body, { childList: true, subtree: true });
-  insertExportBtn();
+  handlePageChange();
 })(); 

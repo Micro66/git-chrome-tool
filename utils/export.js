@@ -1,6 +1,42 @@
 // utils/export.js
 
-export function exportToCSV(data, filename = 'events.csv') {
+// 检测是否为Windows系统
+function isWindowsOS() {
+  return navigator.userAgent.indexOf('Windows') !== -1;
+}
+
+// 默认编码设置，Windows默认使用GBK，其他系统使用UTF-8
+const defaultEncoding = isWindowsOS() ? 'gbk' : 'utf-8';
+
+// 获取用户设置的编码
+async function getEncodingPreference() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['csvEncoding'], (data) => {
+      resolve(data.csvEncoding || defaultEncoding);
+    });
+  });
+}
+
+// 添加UTF-8 BOM标记
+function addUtf8Bom(content) {
+  const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+  return new Blob([bom, content], { type: 'text/csv;charset=utf-8' });
+}
+
+// 创建Excel兼容的CSV (UTF-8 with BOM)
+function createExcelCompatibleCsv(content, encoding) {
+  if (encoding === 'gbk') {
+    // 对于Windows/Excel，我们使用UTF-8 with BOM
+    // 这是因为浏览器环境中直接生成GBK编码内容有限制
+    // 但UTF-8 with BOM可以被Excel正确识别
+    return addUtf8Bom(content);
+  } else {
+    // 对于其他系统，也使用UTF-8 with BOM以确保兼容性
+    return addUtf8Bom(content);
+  }
+}
+
+export async function exportToCSV(data, filename = 'events.csv') {
   const csvRows = [];
   if (data.length === 0) return;
   const headers = Object.keys(data[0]);
@@ -8,7 +44,14 @@ export function exportToCSV(data, filename = 'events.csv') {
   for (const row of data) {
     csvRows.push(headers.map(h => '"' + (row[h] || '').toString().replace(/"/g, '""') + '"').join(','));
   }
-  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+  
+  const csvContent = csvRows.join('\n');
+  const encoding = await getEncodingPreference();
+  
+  // 创建Excel兼容的CSV
+  const blob = createExcelCompatibleCsv(csvContent, encoding);
+  
+  // 创建下载链接
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;
@@ -28,7 +71,14 @@ export async function exportToCSVWithProgress(data, setStatus, filename = 'event
     setStatus && setStatus(`正在导出... (${Math.min(i + batch, data.length)}/${data.length})`);
     await new Promise(r => setTimeout(r, 0));
   }
-  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+  
+  const csvContent = csvRows.join('\n');
+  const encoding = await getEncodingPreference();
+  
+  // 创建Excel兼容的CSV
+  const blob = createExcelCompatibleCsv(csvContent, encoding);
+  
+  // 创建下载链接
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;

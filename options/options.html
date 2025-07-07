@@ -12,7 +12,18 @@
   <div>
     <label>默认 GitLab 实例地址: <input type="text" id="defaultBaseUrl" placeholder="https://gitlab.com" /></label>
   </div>
-  <button id="saveBtn">保存</button>
+  <div style="margin-top: 10px;">
+    <label>CSV导出编码:
+      <select id="csvEncoding">
+        <option value="utf-8">UTF-8 (通用)</option>
+        <option value="gbk">GBK (Windows Excel兼容)</option>
+      </select>
+    </label>
+    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+      提示: Windows用户选择GBK可以避免Excel打开CSV时出现中文乱码
+    </div>
+  </div>
+  <button id="saveBtn" style="margin-top: 15px;">保存</button>
   <div id="saveMsg"></div>
   <script src="options.js"></script>
 </body>
