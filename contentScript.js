@@ -177,15 +177,36 @@
       e.preventDefault();
       errorDiv.textContent = '';
       exportStatus.textContent = '正在导出...';
-      // 读取配置
+      
+      // 获取导出按钮
+      const exportBtn = mask.querySelector('button[type="submit"]');
+      
+      // 读取配置，优先使用最新保存的配置
       chrome.storage.sync.get(['defaultToken', 'defaultBaseUrl'], async (data) => {
-        const token = data.defaultToken || mask.querySelector('#token').value;
-        const baseUrl = data.defaultBaseUrl || mask.querySelector('#baseUrl').value;
+        // 优先使用全局变量中的最新配置
+        const token = window.__gitlab_latest_token || data.defaultToken || mask.querySelector('#token').value;
+        const baseUrl = window.__gitlab_latest_baseUrl || data.defaultBaseUrl || mask.querySelector('#baseUrl').value;
+        
         if (!token || !baseUrl) {
           exportStatus.textContent = '';
           configPanel.style.display = '';
           form.style.display = 'none';
+          // 标记为待导出，配置保存后自动触发导出
+          window.__gitlab_pending_export = true;
+          
+          // 禁用导出按钮
+          if (exportBtn) {
+            exportBtn.disabled = true;
+            exportBtn.classList.add('disabled');
+          }
+          
           return;
+        }
+        
+        // 确保导出按钮启用
+        if (exportBtn) {
+          exportBtn.disabled = false;
+          exportBtn.classList.remove('disabled');
         }
         // 读取查询项
         const after = mask.querySelector('#startDate').value;
@@ -250,8 +271,31 @@
       chrome.storage.sync.set({ defaultToken: token, defaultBaseUrl: baseUrl }, () => {
         mask.querySelector('#saveStatus').textContent = '配置已保存';
         setTimeout(() => mask.querySelector('#saveStatus').textContent = '', 1500);
+        
+        // 隐藏配置面板，显示表单
         configPanel.style.display = 'none';
         form.style.display = '';
+        
+        // 启用导出按钮
+        const exportBtn = mask.querySelector('button[type="submit"]');
+        if (exportBtn) {
+          exportBtn.disabled = false;
+          exportBtn.classList.remove('disabled');
+        }
+        
+        // 重新获取最新配置并更新表单状态
+        chrome.storage.sync.get(['defaultToken', 'defaultBaseUrl'], (data) => {
+          // 更新全局变量或状态，确保导出时使用最新配置
+          window.__gitlab_latest_token = data.defaultToken;
+          window.__gitlab_latest_baseUrl = data.defaultBaseUrl;
+          
+          // 如果用户点击了导出按钮后才配置的，可以自动触发一次导出
+          if (window.__gitlab_pending_export) {
+            window.__gitlab_pending_export = false;
+            // 延迟一点时间再触发导出，确保UI更新完成
+            setTimeout(() => form.dispatchEvent(new Event('submit')), 100);
+          }
+        });
       });
     };
   }

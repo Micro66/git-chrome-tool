@@ -35,6 +35,12 @@ function openOptionsPage() {
   chrome.runtime.openOptionsPage();
 }
 
+// 检查是否在contentScript环境中
+function isInContentScript() {
+  return typeof window !== 'undefined' && window.document &&
+         document.querySelector('#gitlab-export-modal') !== null;
+}
+
 // 添加UTF-8 BOM标记
 function addUtf8Bom(content) {
   const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
@@ -55,12 +61,15 @@ function createExcelCompatibleCsv(content, encoding) {
 }
 
 export async function exportToCSV(data, filename = 'events.csv') {
-  // 检查GitLab配置
-  const config = await checkGitLabConfig();
-  if (!config.isConfigured) {
-    alert('请先配置GitLab URL和Token');
-    openOptionsPage();
-    return;
+  // 检查GitLab配置，但仅在非contentScript环境中执行
+  // 在contentScript环境中，配置检查由contentScript.js处理
+  if (!isInContentScript()) {
+    const config = await checkGitLabConfig();
+    if (!config.isConfigured) {
+      alert('请先配置GitLab URL和Token');
+      openOptionsPage();
+      return;
+    }
   }
 
   const csvRows = [];
@@ -85,13 +94,15 @@ export async function exportToCSV(data, filename = 'events.csv') {
 }
 
 export async function exportToCSVWithProgress(data, setStatus, filename = 'events.csv') {
-  // 检查GitLab配置
-  const config = await checkGitLabConfig();
-  if (!config.isConfigured) {
-    setStatus && setStatus('');
-    alert('请先配置GitLab URL和Token');
-    openOptionsPage();
-    return;
+  // 检查GitLab配置，但仅在非contentScript环境中执行
+  if (!isInContentScript()) {
+    const config = await checkGitLabConfig();
+    if (!config.isConfigured) {
+      setStatus && setStatus('');
+      alert('请先配置GitLab URL和Token');
+      openOptionsPage();
+      return;
+    }
   }
 
   if (data.length === 0) return;
@@ -121,12 +132,14 @@ export async function exportToCSVWithProgress(data, setStatus, filename = 'event
 }
 
 export async function exportToMarkdown(data, filename = 'events.md') {
-  // 检查GitLab配置
-  const config = await checkGitLabConfig();
-  if (!config.isConfigured) {
-    alert('请先配置GitLab URL和Token');
-    openOptionsPage();
-    return;
+  // 检查GitLab配置，但仅在非contentScript环境中执行
+  if (!isInContentScript()) {
+    const config = await checkGitLabConfig();
+    if (!config.isConfigured) {
+      alert('请先配置GitLab URL和Token');
+      openOptionsPage();
+      return;
+    }
   }
 
   if (data.length === 0) return;
@@ -144,13 +157,15 @@ export async function exportToMarkdown(data, filename = 'events.md') {
 }
 
 export async function exportToMarkdownWithProgress(data, setStatus, filename = 'events.md') {
-  // 检查GitLab配置
-  const config = await checkGitLabConfig();
-  if (!config.isConfigured) {
-    setStatus && setStatus('');
-    alert('请先配置GitLab URL和Token');
-    openOptionsPage();
-    return;
+  // 检查GitLab配置，但仅在非contentScript环境中执行
+  if (!isInContentScript()) {
+    const config = await checkGitLabConfig();
+    if (!config.isConfigured) {
+      setStatus && setStatus('');
+      alert('请先配置GitLab URL和Token');
+      openOptionsPage();
+      return;
+    }
   }
 
   if (data.length === 0) return;
