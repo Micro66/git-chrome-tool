@@ -674,9 +674,12 @@
       btn.disabled = true;
       btn.textContent = '加载中...';
       try {
-        // 1. 获取merge_request_iid
-        const match = window.location.pathname.match(/\/merge_requests\/(\d+)\/edit/);
-        const mrIid = match ? match[1] : null;
+        // 1. 获取merge_request_iid 和 group/projectName，支持多级group
+        const url = window.location.href;
+        const regex = /https?:\/\/[^/]+\/(.+?)\/-\/*merge_requests\/(\d+)\//;
+        const match = url.match(regex);
+        const namespaceProject = match ? match[1] : null;
+        const mrIid = match ? match[2] : null;
         if (!mrIid) throw new Error('无法获取merge request iid');
         // 2. 获取token和baseUrl
         chrome.storage.sync.get(['defaultToken', 'defaultBaseUrl'], async (data) => {
@@ -705,21 +708,16 @@
             if (input) projectId = input.value;
           }
           // 3.4 如果还没有，自动从URL解析namespace/project并查API
-          if (!projectId) {
-            // 解析 /namespace/project/-/merge_requests/123/edit
-            const pathMatch = window.location.pathname.match(/^\/([^/]+\/[^/]+)\/-\/merge_requests\/\d+\/edit/);
-            const namespaceProject = pathMatch ? pathMatch[1] : null;
-            if (namespaceProject) {
-              // 用项目API查project_id
-              const projectApiUrl = `${baseUrl.replace(/\/$/, '')}/api/v4/projects/${encodeURIComponent(namespaceProject)}`;
-              try {
-                const res = await fetch(projectApiUrl, { headers: { 'PRIVATE-TOKEN': token } });
-                if (res.ok) {
-                  const projectDetail = await res.json();
-                  projectId = projectDetail.id;
-                }
-              } catch (e) { /* 忽略，后续有兜底 */ }
-            }
+          if (!projectId && namespaceProject) {
+            // 用项目API查project_id
+            const projectApiUrl = `${baseUrl.replace(/\/$/, '')}/api/v4/projects/${encodeURIComponent(namespaceProject)}`;
+            try {
+              const res = await fetch(projectApiUrl, { headers: { 'PRIVATE-TOKEN': token } });
+              if (res.ok) {
+                const projectDetail = await res.json();
+                projectId = projectDetail.id;
+              }
+            } catch (e) { /* 忽略，后续有兜底 */ }
           }
           if (!projectId) {
             alert('无法自动获取project_id，请检查页面URL或手动输入');
