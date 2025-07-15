@@ -884,16 +884,31 @@
           // 展示弹窗，输出区先显示loading
           const resultMask = document.createElement('div');
           resultMask.className = 'gitlab-modal-mask';
-          resultMask.innerHTML = `<div class='gitlab-modal-card'><button class='gitlab-modal-close' title='关闭'>×</button><div class='gitlab-modal-title'>AI总结结果</div><pre id='gitlab-ai-stream-output' style='white-space:pre-wrap;font-size:15px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:12px;min-height:60px;'>AI正在生成...</pre><div style='display:flex;gap:8px;'><button id='gitlab-ai-copy-result' class='gitlab-modal-btn' disabled>复制到剪贴板</button><button id='gitlab-ai-fill-mr' class='gitlab-modal-btn' style='background:#6366f1;' disabled>填充到MR</button></div></div>`;
-          resultMask.querySelector('.gitlab-modal-close').onclick = () => resultMask.remove();
+          resultMask.innerHTML = `<div class='gitlab-modal-card'><button class='gitlab-modal-close' title='关闭'>×</button><div class='gitlab-modal-title'>AI总结结果</div><pre id='gitlab-ai-stream-output' style='white-space:pre-wrap;font-size:15px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:12px;min-height:60px;max-width:600px;word-break:break-all;overflow-x:auto;max-height:300px;overflow-y:auto;'>AI正在生成...</pre><div style='display:flex;gap:8px;'><button id='gitlab-ai-stop' class='gitlab-modal-btn' style='background:#e53e3e;'>停止</button><button id='gitlab-ai-copy-result' class='gitlab-modal-btn' disabled>复制到剪贴板</button><button id='gitlab-ai-fill-mr' class='gitlab-modal-btn' style='background:#6366f1;' disabled>填充到MR</button></div></div>`;
+          resultMask.querySelector('.gitlab-modal-close').onclick = () => { abortStream(); resultMask.remove(); };
           document.body.appendChild(resultMask);
           const outputPre = resultMask.querySelector('#gitlab-ai-stream-output');
           const copyBtn = resultMask.querySelector('#gitlab-ai-copy-result');
           const fillBtn = resultMask.querySelector('#gitlab-ai-fill-mr');
+          const stopBtn = resultMask.querySelector('#gitlab-ai-stop');
           let fullText = '';
           let streamSuccess = false;
+          let abortController = null;
+          let streamAborted = false;
+          function abortStream() {
+            streamAborted = true;
+            if (abortController) abortController.abort();
+          }
+          // 页面关闭时自动停止
+          window.addEventListener('beforeunload', abortStream);
+          stopBtn.onclick = () => {
+            abortStream();
+            stopBtn.disabled = true;
+            stopBtn.textContent = '已停止';
+          };
           // 尝试stream模式
           try {
+            abortController = new AbortController();
             const res = await fetch(`${config.baseURL.replace(/\/$/, '')}/chat/completions`, {
               method: 'POST',
               headers: {
@@ -908,14 +923,15 @@
                   { role: 'system', content: '你是一个资深的Git代码总结助手。' },
                   { role: 'user', content: prompt }
                 ]
-              })
+              }),
+              signal: abortController.signal
             });
             if (!res.ok) throw new Error('LLM API请求失败');
             const reader = res.body.getReader();
             const decoder = new TextDecoder('utf-8');
             let done = false;
             let firstChunk = true;
-            while (!done) {
+            while (!done && !streamAborted) {
               const { value, done: doneReading } = await reader.read();
               done = doneReading;
               if (value) {
@@ -937,11 +953,20 @@
                 });
               }
             }
-            streamSuccess = true;
+            streamSuccess = !streamAborted;
           } catch (e) {
             // stream失败fallback普通模式
+            if (streamAborted) {
+              outputPre.textContent += '\n[已停止]';
+              copyBtn.disabled = false;
+              fillBtn.disabled = false;
+              stopBtn.disabled = true;
+              stopBtn.textContent = '已停止';
+              window.removeEventListener('beforeunload', abortStream);
+              return;
+            }
           }
-          if (!streamSuccess) {
+          if (!streamSuccess && !streamAborted) {
             // fallback普通模式
             const res = await fetch(`${config.baseURL.replace(/\/$/, '')}/chat/completions`, {
               method: 'POST',
@@ -966,37 +991,9 @@
           // 启用按钮
           copyBtn.disabled = false;
           fillBtn.disabled = false;
-          // 复制按钮
-          copyBtn.onclick = () => {
-            navigator.clipboard.writeText(fullText);
-            showToast('已复制到剪贴板');
-          };
-          // 填充到MR按钮
-          fillBtn.onclick = () => {
-            // 解析title/desc
-            let title = '', desc = '';
-            const titleMatch = fullText.match(/Title\s*[:：]\s*(.+)/i);
-            if (titleMatch) title = titleMatch[1].trim();
-            const descMatch = fullText.match(/Description\s*[:：]\s*([\s\S]+)/i);
-            if (descMatch) desc = descMatch[1].trim();
-            // 填充标题
-            const titleInput = document.querySelector('input#merge_request_title');
-            if (titleInput) titleInput.value = title;
-            // 填充描述（兼容富文本和纯文本）
-            // 1. 富文本ProseMirror
-            const prose = document.querySelector('[data-testid="content_editor_editablebox"] .ProseMirror');
-            if (prose) {
-              prose.focus();
-              document.execCommand('selectAll', false, null);
-              document.execCommand('delete', false, null);
-              document.execCommand('insertText', false, desc);
-            }
-            // 2. 纯文本textarea/hidden
-            const descInput = document.querySelector('textarea#merge_request_description, input#merge_request_description');
-            if (descInput) descInput.value = desc;
-            showToast('已自动填充到MR表单');
-            resultMask.remove();
-          };
+          stopBtn.disabled = true;
+          stopBtn.textContent = '已停止';
+          window.removeEventListener('beforeunload', abortStream);
         } catch(e) {
           showToast('AI总结失败: '+e.message);
         } finally {
