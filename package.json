@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "openai": "^4.20.0"
   }
 }
