@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# VSCode
+.vscode/
+
+# JetBrains IDEs
+.idea/
+*.iml
+
+# Chrome Extension build output
+*.crx
+*.pem
+
+# Logs
+logs
+*.log
+
+# Optional: OS generated files
+Thumbs.db
+Desktop.ini
+
+# Optional: environment files
+.env
+.env.*
+
+# Optional: coverage reports
+coverage/
+
+# Optional: build output
+dist/
+build/
+
+# Optional: cache
+.cache/ 

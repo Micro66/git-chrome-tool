@@ -496,7 +496,7 @@
     btn.appendChild(spanText);
     
     // 插入按钮到Edit按钮前面
-    editBtn.parentNode.insertBefore(btn, editBtn);
+    editBtn.parentNode.insertBefore(btn, editBtn.nextSibling);
     
     // 同时在移动端下拉菜单中添加复制git diff选项
     try {
@@ -649,12 +649,247 @@
     }, 2000);
   }
 
+  // 新增：插入提取commit按钮
+  function insertExtractCommitsBtn() {
+    // 只在merge request编辑页面插入
+    if (!/\/merge_requests\/(\d+)\/edit/.test(window.location.pathname)) return;
+    if (document.getElementById('gitlab-extract-commits-btn')) return;
+    // 优先查找Edit按钮
+    const editBtn = document.querySelector('.detail-page-header-actions a.js-issuable-edit');
+    let insertTarget = null;
+    if (editBtn && editBtn.parentNode) {
+      insertTarget = editBtn;
+    } else {
+      // 没有Edit按钮，降级插入到.branch-selector末尾
+      insertTarget = document.querySelector('.branch-selector');
+      if (!insertTarget) return;
+    }
+    // 创建按钮
+    const btn = document.createElement('button');
+    btn.id = 'gitlab-extract-commits-btn';
+    btn.type = 'button';
+    btn.className = 'gl-button btn btn-md btn-confirm';
+    btn.style.marginLeft = '12px';
+    btn.onclick = async function() {
+      btn.disabled = true;
+      btn.textContent = '加载中...';
+      try {
+        // 1. 获取merge_request_iid
+        const match = window.location.pathname.match(/\/merge_requests\/(\d+)\/edit/);
+        const mrIid = match ? match[1] : null;
+        if (!mrIid) throw new Error('无法获取merge request iid');
+        // 2. 获取token和baseUrl
+        chrome.storage.sync.get(['defaultToken', 'defaultBaseUrl'], async (data) => {
+          const token = window.__gitlab_latest_token || data.defaultToken;
+          const baseUrl = window.__gitlab_latest_baseUrl || data.defaultBaseUrl;
+          if (!token || !baseUrl) {
+            alert('请先在插件设置中配置GitLab Token和实例地址');
+            btn.textContent = '提取所有commit';
+            btn.disabled = false;
+            return;
+          }
+          // 3. 获取project_id
+          let projectId = null;
+          // 3.1 尝试从全局JS变量
+          if (window.gon && window.gon.current_project_id) {
+            projectId = window.gon.current_project_id;
+          }
+          // 3.2 尝试从meta标签
+          if (!projectId) {
+            const meta = document.querySelector('meta[name="project-id"]');
+            if (meta) projectId = meta.getAttribute('content');
+          }
+          // 3.3 尝试从页面隐藏字段
+          if (!projectId) {
+            const input = document.querySelector('input[name="project_id"]');
+            if (input) projectId = input.value;
+          }
+          // 3.4 如果还没有，自动从URL解析namespace/project并查API
+          if (!projectId) {
+            // 解析 /namespace/project/-/merge_requests/123/edit
+            const pathMatch = window.location.pathname.match(/^\/([^/]+\/[^/]+)\/-\/merge_requests\/\d+\/edit/);
+            const namespaceProject = pathMatch ? pathMatch[1] : null;
+            if (namespaceProject) {
+              // 用项目API查project_id
+              const projectApiUrl = `${baseUrl.replace(/\/$/, '')}/api/v4/projects/${encodeURIComponent(namespaceProject)}`;
+              try {
+                const res = await fetch(projectApiUrl, { headers: { 'PRIVATE-TOKEN': token } });
+                if (res.ok) {
+                  const projectDetail = await res.json();
+                  projectId = projectDetail.id;
+                }
+              } catch (e) { /* 忽略，后续有兜底 */ }
+            }
+          }
+          if (!projectId) {
+            alert('无法自动获取project_id，请检查页面URL或手动输入');
+            btn.textContent = '提取所有commit';
+            btn.disabled = false;
+            return;
+          }
+          // 4. 拉取commit
+          const apiUrl = `${baseUrl.replace(/\/$/, '')}/api/v4/projects/${encodeURIComponent(projectId)}/merge_requests/${mrIid}/commits`;
+          try {
+            const res = await fetch(apiUrl, { headers: { 'PRIVATE-TOKEN': token } });
+            if (!res.ok) throw new Error('API请求失败');
+            const commits = await res.json();
+            showCommitsModal(commits);
+          } catch (e) {
+            alert('获取commit信息失败: ' + e.message);
+          }
+          btn.textContent = '提取所有commit';
+          btn.disabled = false;
+        });
+      } catch (e) {
+        alert(e.message);
+        btn.textContent = '提取所有commit';
+        btn.disabled = false;
+      }
+    };
+    // 创建span结构
+    const spanText = document.createElement('span');
+    spanText.className = 'gl-button-text';
+    spanText.textContent = '提取所有commit';
+    btn.textContent = '';
+    btn.appendChild(spanText);
+    // 插入
+    if (editBtn && editBtn.parentNode) {
+      editBtn.parentNode.insertBefore(btn, editBtn);
+    } else {
+      insertTarget.appendChild(btn);
+    }
+  }
+
+  // 新增：弹窗展示commit信息（带导出/复制按钮）
+  function showCommitsModal(commits) {
+    if (document.getElementById('gitlab-commits-modal')) return;
+    const mask = document.createElement('div');
+    mask.className = 'gitlab-modal-mask';
+    mask.id = 'gitlab-commits-modal';
+    // 分页参数
+    let pageSize = 20;
+    let page = 1;
+    const pageSizeOptions = [10, 20, 50, 100];
+    const total = commits ? commits.length : 0;
+    function renderTable() {
+      let html = `<div class=\"gitlab-modal-card\"><button class=\"gitlab-modal-close\" title=\"关闭\">×</button><div class=\"gitlab-modal-title\">MR Commit 列表</div>`;
+      // 按钮区+每页条数选择
+      html += `<div style='margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;'>
+        <div>
+          <button id='gitlab-commits-export-csv' class='gitlab-modal-btn' style='margin-right:8px;'>导出CSV</button>
+          <button id='gitlab-commits-copy-md' class='gitlab-modal-btn' style='margin-right:8px;'>复制Markdown</button>
+          <button id='gitlab-commits-copy' class='gitlab-modal-btn'>复制全部</button>
+        </div>
+        <div style='font-size:14px;'>
+          每页
+          <select id='gitlab-commits-page-size' style='margin:0 4px;'>
+            ${pageSizeOptions.map(opt => `<option value='${opt}'${opt===pageSize?" selected":''}>${opt}</option>`).join('')}
+          </select>
+          条
+        </div>
+      </div>`;
+      html += `<div style=\"max-height:400px;overflow:auto;font-size:14px;\">`;
+      if (!commits || !commits.length) {
+        html += '<div>无commit数据</div>';
+      } else {
+        html += '<table style="width:100%;border-collapse:collapse;border:1px solid #d1d5db;">';
+        html += '<tr style="background:#f3f4f6;">'
+          +'<th style="text-align:left;border:1px solid #d1d5db;padding:4px 8px;">SHA</th>'
+          +'<th style="text-align:left;border:1px solid #d1d5db;padding:4px 8px;">标题</th>'
+          +'<th style="text-align:left;border:1px solid #d1d5db;padding:4px 8px;">作者</th>'
+          +'<th style="text-align:left;border:1px solid #d1d5db;padding:4px 8px;">时间</th>'
+        +'</tr>';
+        const start = (page-1)*pageSize;
+        const end = Math.min(start+pageSize, commits.length);
+        for (let i=start; i<end; ++i) {
+          const c = commits[i];
+          html += `<tr><td style=\"font-family:monospace;border:1px solid #d1d5db;padding:4px 8px;\">${c.short_id}</td><td style=\"border:1px solid #d1d5db;padding:4px 8px;\">${c.title}</td><td style=\"border:1px solid #d1d5db;padding:4px 8px;\">${c.author_name}</td><td style=\"border:1px solid #d1d5db;padding:4px 8px;\">${c.created_at.replace('T',' ').replace('Z','')}</td></tr>`;
+        }
+        html += '</table>';
+      }
+      html += '</div>';
+      // 分页控件
+      if (commits && commits.length > 0) {
+        const totalPages = Math.ceil(commits.length/pageSize);
+        html += `<div style='margin-top:10px;display:flex;justify-content:space-between;align-items:center;font-size:14px;'>
+          <div>共 ${commits.length} 条，当前第 ${page} / ${totalPages} 页</div>
+          <div>
+            <button id='gitlab-commits-prev' class='gitlab-modal-btn' style='margin-right:8px;' ${page===1?'disabled':''}>上一页</button>
+            <button id='gitlab-commits-next' class='gitlab-modal-btn' ${page===totalPages?'disabled':''}>下一页</button>
+          </div>
+        </div>`;
+      }
+      html += '</div>';
+      mask.innerHTML = html;
+      mask.querySelector('.gitlab-modal-close').onclick = () => mask.remove();
+      mask.onkeydown = e => { if (e.key === 'Escape') mask.remove(); };
+      mask.tabIndex = -1; mask.focus();
+      // 按钮事件
+      const headers = ['SHA', '标题', '作者', '时间'];
+      const commitRows = (commits||[]).map(c => [c.short_id, c.title, c.author_name, c.created_at.replace('T',' ').replace('Z','')]);
+      // 导出CSV
+      mask.querySelector('#gitlab-commits-export-csv').onclick = () => {
+        let csv = headers.join(',') + '\n';
+        for (const row of commitRows) {
+          csv += row.map(v => '"'+(v||'').replace(/"/g,'""')+'"').join(',') + '\n';
+        }
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `mr_commits_${new Date().toISOString().slice(0,10)}.csv`;
+        link.click();
+      };
+      // 导出Markdown
+      mask.querySelector('#gitlab-commits-copy-md').onclick = () => {
+        let md = '| ' + headers.join(' | ') + ' |\n';
+        md += '| ' + headers.map(()=> '---').join(' | ') + ' |\n';
+        for (const row of commitRows) {
+          md += '| ' + row.map(v => (v||'').replace(/\|/g,'\\|')) .join(' | ') + ' |\n';
+        }
+        navigator.clipboard.writeText(md).then(() => {
+          showToast('已复制为Markdown表格');
+        });
+      };
+      // 复制全部
+      mask.querySelector('#gitlab-commits-copy').onclick = () => {
+        let text = headers.join('\t') + '\n';
+        for (const row of commitRows) {
+          text += row.join('\t') + '\n';
+        }
+        navigator.clipboard.writeText(text).then(() => {
+          showToast('已复制到剪贴板');
+        });
+      };
+      // 分页事件
+      const pageSizeSelect = mask.querySelector('#gitlab-commits-page-size');
+      if (pageSizeSelect) {
+        pageSizeSelect.onchange = e => {
+          pageSize = parseInt(e.target.value, 10);
+          page = 1;
+          renderTable();
+        };
+      }
+      const prevBtn = mask.querySelector('#gitlab-commits-prev');
+      if (prevBtn) {
+        prevBtn.onclick = () => { if (page > 1) { page--; renderTable(); } };
+      }
+      const nextBtn = mask.querySelector('#gitlab-commits-next');
+      if (nextBtn) {
+        const totalPages = Math.ceil(commits.length/pageSize);
+        nextBtn.onclick = () => { if (page < totalPages) { page++; renderTable(); } };
+      }
+    }
+    renderTable();
+    document.body.appendChild(mask);
+  }
+
   // 根据页面类型执行不同的操作
   function handlePageChange() {
     if (window.location.href.includes('/users/') && window.location.href.includes('/activity')) {
       insertExportBtn();
     } else if (window.location.href.includes('/merge_requests/')) {
       insertCopyDiffBtn();
+      insertExtractCommitsBtn(); // 新增
     }
   }
 
