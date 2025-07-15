@@ -2,26 +2,59 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>GitLab 配置</title>
+  <title>Git Chrome Tool</title>
   <link rel="stylesheet" href="popup.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
-  <div class="glass-container">
-    <div class="tab-panel">
-      <h2>GitLab 配置</h2>
-      <div class="form-group">
-        <label>GitLab 实例地址:
-          <input type="text" id="baseUrl" placeholder="https://gitlab.com" />
-        </label>
+  <div class="popup-root">
+    <div class="popup-card">
+      <div class="popup-tabs">
+        <button class="popup-tab active" id="tab-gitlab">GitLab 配置</button>
+        <button class="popup-tab" id="tab-llm">LLM 配置</button>
       </div>
-      <div class="form-group">
-        <label>GitLab Token:
-          <input type="*" id="token" />
-        </label>
+      <div class="popup-panel" id="panel-gitlab">
+        <h2 class="popup-title">GitLab 配置</h2>
+        <div class="popup-form-group">
+          <label for="baseUrl">GitLab 实例地址</label>
+          <input type="text" id="baseUrl" placeholder="https://gitlab.com" class="popup-input" />
+        </div>
+        <div class="popup-form-group">
+          <label for="token">GitLab Token</label>
+          <input type="password" id="token" class="popup-input" />
+        </div>
+        <div class="popup-form-actions">
+          <button id="saveSettingsBtn" class="popup-btn primary">保存配置</button>
+          <span id="saveStatus" class="popup-status"></span>
+        </div>
       </div>
-      <div class="form-group">
-        <button id="saveSettingsBtn" class="primary-btn">保存配置</button>
-        <span id="saveStatus" style="color:#388e3c;font-size:13px;margin-left:12px;"></span>
+      <div class="popup-panel" id="panel-llm" style="display:none;">
+        <h2 class="popup-title">LLM 配置</h2>
+        <div id="llm-list" class="popup-llm-list"></div>
+        <div class="popup-form-group">
+          <label for="llm-baseUrl">baseURL</label>
+          <input type="text" id="llm-baseUrl" placeholder="https://openrouter.ai/api/v1" class="popup-input" />
+        </div>
+        <div class="popup-form-group">
+          <label for="llm-apiKey">apiKey</label>
+          <input type="text" id="llm-apiKey" placeholder="API Key" class="popup-input" />
+        </div>
+        <div class="popup-form-group">
+          <label for="llm-defaultHeaders">defaultHeaders (JSON)</label>
+          <input type="text" id="llm-defaultHeaders" placeholder='{"HTTP-Referer":"...","X-Title":"..."}' class="popup-input" />
+        </div>
+        <div class="popup-form-group">
+          <label for="llm-model">model</label>
+          <input type="text" id="llm-model" placeholder="moonshotai/kimi-k2" class="popup-input" />
+        </div>
+        <div class="popup-form-actions">
+          <button id="addLlmConfigBtn" class="popup-btn primary">新增/更新配置</button>
+          <button id="clearLlmFormBtn" class="popup-btn secondary">清空表单</button>
+        </div>
+        <div class="popup-form-actions">
+          <button id="saveLlmConfigsBtn" class="popup-btn primary">保存全部配置</button>
+          <span id="llmSaveStatus" class="popup-status"></span>
+        </div>
       </div>
     </div>
   </div>

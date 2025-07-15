@@ -778,7 +778,8 @@
         <div>
           <button id='gitlab-commits-export-csv' class='gitlab-modal-btn' style='margin-right:8px;'>导出CSV</button>
           <button id='gitlab-commits-copy-md' class='gitlab-modal-btn' style='margin-right:8px;'>复制Markdown</button>
-          <button id='gitlab-commits-copy' class='gitlab-modal-btn'>复制全部</button>
+          <button id='gitlab-commits-copy' class='gitlab-modal-btn' style='margin-right:8px;'>复制全部</button>
+          <button id='gitlab-commits-ai-summary' class='gitlab-modal-btn' style='background:#10a37f;'>AI总结</button>
         </div>
         <div style='font-size:14px;'>
           每页
@@ -859,6 +860,149 @@
         navigator.clipboard.writeText(text).then(() => {
           showToast('已复制到剪贴板');
         });
+      };
+      // AI总结按钮
+      mask.querySelector('#gitlab-commits-ai-summary').onclick = async () => {
+        const btn = mask.querySelector('#gitlab-commits-ai-summary');
+        btn.disabled = true;
+        btn.textContent = '总结中...';
+        try {
+          // 组装prompt
+          let prompt = '请根据以下Git Commit列表，总结出一个合适的Merge Request标题和描述（中文），格式如下：\nTitle: ...\nDescription: ...\nCommit列表如下：\n';
+          for (const c of commits) {
+            prompt += `- ${c.title}\n`;
+          }
+          // 读取llm配置
+          const config = await new Promise((resolve) => {
+            chrome.storage.sync.get(['llmConfigs'], (data) => {
+              const configs = Array.isArray(data.llmConfigs) ? data.llmConfigs : [];
+              const def = configs.find(cfg => cfg.isDefault) || configs[0] || null;
+              resolve(def);
+            });
+          });
+          if (!config || !config.apiKey || !config.baseURL || !config.model) throw new Error('请先在插件设置中配置LLM');
+          // 展示弹窗，输出区先显示loading
+          const resultMask = document.createElement('div');
+          resultMask.className = 'gitlab-modal-mask';
+          resultMask.innerHTML = `<div class='gitlab-modal-card'><button class='gitlab-modal-close' title='关闭'>×</button><div class='gitlab-modal-title'>AI总结结果</div><pre id='gitlab-ai-stream-output' style='white-space:pre-wrap;font-size:15px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:12px;min-height:60px;'>AI正在生成...</pre><div style='display:flex;gap:8px;'><button id='gitlab-ai-copy-result' class='gitlab-modal-btn' disabled>复制到剪贴板</button><button id='gitlab-ai-fill-mr' class='gitlab-modal-btn' style='background:#6366f1;' disabled>填充到MR</button></div></div>`;
+          resultMask.querySelector('.gitlab-modal-close').onclick = () => resultMask.remove();
+          document.body.appendChild(resultMask);
+          const outputPre = resultMask.querySelector('#gitlab-ai-stream-output');
+          const copyBtn = resultMask.querySelector('#gitlab-ai-copy-result');
+          const fillBtn = resultMask.querySelector('#gitlab-ai-fill-mr');
+          let fullText = '';
+          let streamSuccess = false;
+          // 尝试stream模式
+          try {
+            const res = await fetch(`${config.baseURL.replace(/\/$/, '')}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${config.apiKey}`,
+                ...(config.defaultHeaders||{})
+              },
+              body: JSON.stringify({
+                model: config.model,
+                stream: true,
+                messages: [
+                  { role: 'system', content: '你是一个资深的Git代码总结助手。' },
+                  { role: 'user', content: prompt }
+                ]
+              })
+            });
+            if (!res.ok) throw new Error('LLM API请求失败');
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let done = false;
+            let firstChunk = true;
+            while (!done) {
+              const { value, done: doneReading } = await reader.read();
+              done = doneReading;
+              if (value) {
+                const chunk = decoder.decode(value, { stream: true });
+                chunk.split(/\r?\n/).forEach(line => {
+                  if (line.startsWith('data: ')) {
+                    const data = line.replace('data: ', '').trim();
+                    if (data === '[DONE]') return;
+                    try {
+                      const delta = JSON.parse(data);
+                      const content = delta.choices?.[0]?.delta?.content;
+                      if (content) {
+                        if (firstChunk) { outputPre.textContent = ''; firstChunk = false; }
+                        fullText += content;
+                        outputPre.textContent = fullText;
+                      }
+                    } catch {}
+                  }
+                });
+              }
+            }
+            streamSuccess = true;
+          } catch (e) {
+            // stream失败fallback普通模式
+          }
+          if (!streamSuccess) {
+            // fallback普通模式
+            const res = await fetch(`${config.baseURL.replace(/\/$/, '')}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${config.apiKey}`,
+                ...(config.defaultHeaders||{})
+              },
+              body: JSON.stringify({
+                model: config.model,
+                messages: [
+                  { role: 'system', content: '你是一个资深的Git代码总结助手。' },
+                  { role: 'user', content: prompt }
+                ]
+              })
+            });
+            if (!res.ok) throw new Error('LLM API请求失败');
+            const data = await res.json();
+            fullText = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '';
+            outputPre.textContent = fullText || '无内容';
+          }
+          // 启用按钮
+          copyBtn.disabled = false;
+          fillBtn.disabled = false;
+          // 复制按钮
+          copyBtn.onclick = () => {
+            navigator.clipboard.writeText(fullText);
+            showToast('已复制到剪贴板');
+          };
+          // 填充到MR按钮
+          fillBtn.onclick = () => {
+            // 解析title/desc
+            let title = '', desc = '';
+            const titleMatch = fullText.match(/Title\s*[:：]\s*(.+)/i);
+            if (titleMatch) title = titleMatch[1].trim();
+            const descMatch = fullText.match(/Description\s*[:：]\s*([\s\S]+)/i);
+            if (descMatch) desc = descMatch[1].trim();
+            // 填充标题
+            const titleInput = document.querySelector('input#merge_request_title');
+            if (titleInput) titleInput.value = title;
+            // 填充描述（兼容富文本和纯文本）
+            // 1. 富文本ProseMirror
+            const prose = document.querySelector('[data-testid="content_editor_editablebox"] .ProseMirror');
+            if (prose) {
+              prose.focus();
+              document.execCommand('selectAll', false, null);
+              document.execCommand('delete', false, null);
+              document.execCommand('insertText', false, desc);
+            }
+            // 2. 纯文本textarea/hidden
+            const descInput = document.querySelector('textarea#merge_request_description, input#merge_request_description');
+            if (descInput) descInput.value = desc;
+            showToast('已自动填充到MR表单');
+            resultMask.remove();
+          };
+        } catch(e) {
+          showToast('AI总结失败: '+e.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'AI总结';
+        }
       };
       // 分页事件
       const pageSizeSelect = mask.querySelector('#gitlab-commits-page-size');
