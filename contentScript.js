@@ -868,7 +868,7 @@
           // 组装prompt
           let prompt = '请根据以下Git Commit列表，总结出一个合适的Merge Request标题和描述（中文），格式如下：\nTitle: ...\nDescription: ...\nCommit列表如下：\n';
           for (const c of commits) {
-            prompt += `- ${c.title}\n`;
+            prompt += `- ${c.message.trim()}\n`;
           }
           // 读取llm配置
           const config = await new Promise((resolve) => {
@@ -992,6 +992,54 @@
           stopBtn.disabled = true;
           stopBtn.textContent = '已停止';
           window.removeEventListener('beforeunload', abortStream);
+
+          // 新增：为复制和填充按钮绑定事件
+          copyBtn.onclick = () => {
+            navigator.clipboard.writeText(fullText).then(() => {
+              showToast('已复制到剪贴板');
+            });
+          };
+          fillBtn.onclick = () => {
+            // 解析AI输出格式
+            const match = fullText.match(/^Title:\s*(.+?)\s*\n+Description:\s*([\s\S]*)$/i);
+            if (match) {
+              const title = match[1].trim();
+              const desc = match[2].trim();
+              // 填充到MR编辑页面
+              const titleInput = document.querySelector('#merge_request_title');
+              if (titleInput) titleInput.value = title;
+
+              // 优先填充ProseMirror富文本编辑器，模拟粘贴Markdown
+              let descEditor = document.querySelector('div.ProseMirror[contenteditable="true"]');
+              if (descEditor) {
+                descEditor.focus();
+                // 先全选并删除原有内容
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(descEditor);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                document.execCommand('delete', false, null);
+                // 模拟粘贴事件，带text/markdown
+                const clipboardData = new DataTransfer();
+                clipboardData.setData('text/plain', desc);
+                clipboardData.setData('text/markdown', desc);
+                const pasteEvent = new ClipboardEvent('paste', {
+                  clipboardData,
+                  bubbles: true
+                });
+                descEditor.dispatchEvent(pasteEvent);
+              } else {
+                // fallback: 填充隐藏的textarea
+                const descInput = document.querySelector('#markdown_editor_form_field') ||
+                                  document.querySelector('#merge_request_description');
+                if (descInput) descInput.value = desc;
+              }
+              showToast('已填充到MR表单');
+            } else {
+              showToast('AI输出格式无法识别');
+            }
+          };
         } catch(e) {
           showToast('AI总结失败: '+e.message);
         } finally {
